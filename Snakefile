@@ -6,12 +6,13 @@ rule all:
 
 rule files:
     params:
-        raw_vipr = "data/allEntero-11Dec18.tsv", #raw VIPR download!
+        raw_vipr = "data/allEntero-20Nov18.tsv", #raw VIPR download!
 
         swedish_seqs = "data/ev_d68_genomes_sweden_vp1.fasta",
         swedish_meta = "data/20180902_Karolinska-region.csv",
         dropped_strains = "config/dropped_strains.txt",
         reference = "config/ev_d68_reference_vp1.gb",
+        blast_ref = "config/ev_d68_reference_vp1.fasta",
         colors = "config/colors.tsv",
         clades = "config/clades.tsv",
         auspice_config = "config/auspice_config.json",
@@ -95,7 +96,7 @@ rule download_seqs:
 #blast all the downloaded sequences
 rule blast:        
     input:
-        blast_db_file = "config/ev_d68_reference_vp1.fasta",
+        blast_db_file = files.blast_ref,
         seqs_to_blast = rules.download_seqs.output.sequences
     output:
         blast_out = "temp/blast_out.csv"
