@@ -6,7 +6,7 @@ rule all:
 
 rule files:
     params:
-        raw_vipr = "data/allEntero-20Nov18.tsv", #raw VIPR download!
+        raw_vipr = "data/allEntero-11Dec18.tsv", #raw VIPR download!
 
         swedish_seqs = "data/ev_d68_genomes_sweden_vp1.fasta",
         swedish_meta = "data/20180902_Karolinska-region.csv",
@@ -214,6 +214,9 @@ rule make_database:
         cp {input.download} genbank
         cp {input.seqs} results
         cp {input.meta} results
+        rm {input.gen_seqs}
+        rm {input.gen_meta}
+        rm {input.download}
         '''
 
 
