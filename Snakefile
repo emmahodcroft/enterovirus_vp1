@@ -6,7 +6,7 @@ rule all:
 
 rule files:
     params:
-        raw_vipr = "data/allEntero-31Jan19.tsv", #raw VIPR download!
+        raw_vipr = "data/allEntero-11Dec18.tsv", #"data/allEntero-31Jan19.tsv", #raw VIPR download!
 
         #samples sequenced in Sweden
         swedish_seqs = "data/ev_d68_genomes_2018_vp1.fasta",
@@ -33,7 +33,7 @@ RERUN = True if os.path.isfile("genbank/current_vipr_download.tsv") else False
 rule parse_vipr_meta:
     input:
         meta = files.raw_vipr,
-        regions = files.regions
+        regions = ancient(files.regions)
     output:
         out = "temp/current_vipr_download.tsv"
     message:
@@ -46,8 +46,8 @@ rule parse_vipr_meta:
 rule remove_dupes:
     input:
         genbank_meta = rules.parse_vipr_meta.output,
-        swed_meta = files.swedish_meta,
-        man_meta = files.manual_meta,
+        swed_meta = ancient(files.swedish_meta), #do not rerun if other meta changes - won't influence genbank!
+        man_meta = ancient(files.manual_meta),
     output:
         "temp/meta_to_download.tsv"
     shell:
@@ -58,8 +58,8 @@ rule remove_dupes:
 rule find_new:
     input:
         old_meta = ancient("genbank/current_vipr_download.tsv"),
-        swed_meta = files.swedish_meta,
-        man_meta = files.manual_meta,
+        swed_meta = ancient(files.swedish_meta), #do not rerun if other meta changes - won't influence genbank!
+        man_meta = ancient(files.manual_meta),
         new_meta = rules.parse_vipr_meta.output.out
     output:
         out = "temp/new_meta_to_download.tsv"
@@ -181,12 +181,36 @@ rule add_sequences:
         cat {input} > {output}
         '''
 
+#if all has gone well up to here, copy relevant files to allow rerun next time!
+rule make_database:
+    input:
+        gen_seqs = "temp/genbank_vp1_sequences.fasta",
+        gen_meta = "temp/genbank_vp1_meta.tsv",
+        download = "temp/current_vipr_download.tsv",
+    output:
+        gen_seqs = "genbank/genbank_vp1_sequences.fasta",
+        gen_meta = "genbank/genbank_vp1_meta.tsv",
+        download = "genbank/current_vipr_download.tsv",
+    message:
+        "Genbank files updated with new sequences!" if RERUN else "Genbank files stored. Reruns will only download new accession numbers."
+    shell:
+        '''
+        cp {input.gen_seqs} genbank
+        cp {input.gen_meta} genbank
+        cp {input.download} genbank
+        rm {input.gen_seqs}
+        rm {input.gen_meta}
+        rm {input.download}
+        '''
+
+
 #concatenate genbank meta and seqs with Swedish & manual samples
+#we want this to run if changes to swedish/manual data, even if there aren't new genbank!
 rule concat_meta:
     input:
-        metadata = [files.swedish_meta, files.manual_meta, "temp/genbank_vp1_meta.tsv"]
+        metadata = [files.swedish_meta, files.manual_meta, "genbank/genbank_vp1_meta.tsv"]
     output:
-        metadata = "temp/metadata.tsv"
+        metadata = "results/metadata.tsv"
     run:
         import pandas as pd
         from augur.parse import fix_dates, forbidden_characters
@@ -207,42 +231,13 @@ rule concat_meta:
 #concatenate genbank seqs with Swedish & manual
 rule concat_sequences:
     input:
-        files.swedish_seqs, files.manual_seqs, "temp/genbank_vp1_sequences.fasta"
+        files.swedish_seqs, files.manual_seqs, "genbank/genbank_vp1_sequences.fasta"
     output:
-        "temp/sequences.fasta"
+        "results/sequences.fasta"
     shell:
         '''
         cat {input} > {output}
         '''
-
-#if all has gone well up to here, copy relevant files to allow rerun next time!
-rule make_database:
-    input:
-        gen_seqs = "temp/genbank_vp1_sequences.fasta",
-        gen_meta = "temp/genbank_vp1_meta.tsv",
-        download = "temp/current_vipr_download.tsv",
-        seqs = rules.concat_sequences.output,
-        meta = rules.concat_meta.output.metadata,
-    output:
-        gen_seqs = "genbank/genbank_vp1_sequences.fasta",
-        gen_meta = "genbank/genbank_vp1_meta.tsv",
-        download = "genbank/current_vipr_download.tsv",
-        seqs = "results/sequences.fasta",
-        meta = "results/metadata.tsv"
-    message:
-        "Genbank files updated with new sequences!" if RERUN else "Genbank files stored. Reruns will only download new accession numbers."
-    shell:
-        '''
-        cp {input.gen_seqs} genbank
-        cp {input.gen_meta} genbank
-        cp {input.download} genbank
-        cp {input.seqs} results
-        cp {input.meta} results
-        rm {input.gen_seqs}
-        rm {input.gen_meta}
-        rm {input.download}
-        '''
-
 
 
 ##############################
@@ -251,8 +246,8 @@ rule make_database:
 
 rule filter:
     input:
-        sequences = rules.make_database.output.seqs, #rules.concat_sequences.output,
-        metadata = rules.make_database.output.meta, #rules.concat_meta.output.metadata,
+        sequences = rules.concat_sequences.output,
+        metadata = rules.concat_meta.output.metadata,
         exclude = files.dropped_strains
     output:
         sequences = "results/filtered.fasta"
@@ -295,7 +290,7 @@ rule refine:
     input:
         tree = rules.tree.output.tree,
         alignment = rules.align.output.alignment,
-        metadata = rules.make_database.output.meta,
+        metadata = rules.concat_meta.output.metadata,
     output:
         tree = "results/tree_vp1.nwk",
         node_data = "results/branch_lengths_vp1.json"
@@ -356,7 +351,7 @@ rule clades:
 rule traits:
     input:
         tree = rules.refine.output.tree,
-        metadata = rules.make_database.output.meta,
+        metadata = rules.concat_meta.output.metadata,
     output:
         node_data = "results/traits_vp1.json",
     params:
@@ -370,7 +365,7 @@ rule traits:
 rule export:
     input:
         tree = rules.refine.output.tree,
-        metadata = rules.make_database.output.meta,
+        metadata = rules.concat_meta.output.metadata,
         branch_lengths = rules.refine.output.node_data,
         nt_muts = rules.ancestral.output.nt_data,
         aa_muts = rules.translate.output.aa_data,
