@@ -47,9 +47,11 @@ This Snakefile saves a copy of the most recently run parsed, downloaded ViPR fil
 Here are some graphics showing the snakemake run diagram for a new run of the pipeline, and a re-run, adding new sequences:
 
 New run:
+
 ![alt text][run1]
 
 Re-run:
+
 ![alt text][run2]
 
 [run1]: https://github.com/emmahodcroft/enterovirus_vp1/raw/master/images/newrun-snakemake-DAG.PNG "new run"
