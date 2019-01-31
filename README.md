@@ -52,5 +52,5 @@ New run:
 Re-run:
 ![alt text][run2]
 
-[run1]: https://github.com/emmahodcroft/enterovirus_vp1/tree/master/images/newrun-snakemake-DAG.PNG "new run"
-[run2]: https://github.com/emmahodcroft/enterovirus_vp1/tree/master/images/rerun-snakemake-DAG.PNG "rerun"
+[run1]: https://github.com/emmahodcroft/enterovirus_vp1/raw/master/images/newrun-snakemake-DAG.PNG "new run"
+[run2]: https://github.com/emmahodcroft/enterovirus_vp1/raw/master/images/rerun-snakemake-DAG.PNG "rerun"
