@@ -6,10 +6,15 @@ rule all:
 
 rule files:
     params:
-        raw_vipr = "data/allEntero-11Dec18.tsv", #raw VIPR download!
+        raw_vipr = "data/allEntero-31Jan19.tsv", #raw VIPR download!
 
-        swedish_seqs = "data/ev_d68_genomes_sweden_vp1.fasta",
-        swedish_meta = "data/20180902_Karolinska-region.csv",
+        #samples sequenced in Sweden
+        swedish_seqs = "data/ev_d68_genomes_2018_vp1.fasta",
+        swedish_meta = "data/20190128_Karolinska-region.csv",
+        #samples added manually - not from ViPR
+        manual_seqs = "data/manual-seqs.fasta",
+        manual_meta = "data/manual-meta.csv",
+
         dropped_strains = "config/dropped_strains.txt",
         reference = "config/ev_d68_reference_vp1.gb",
         blast_ref = "config/ev_d68_reference_vp1.fasta",
@@ -24,6 +29,7 @@ import os.path
 RERUN = True if os.path.isfile("genbank/current_vipr_download.tsv") else False
 
 #always parse new genbank files - add regions if wanted
+#this makes new strain names from strain+accession to be unique
 rule parse_vipr_meta:
     input:
         meta = files.raw_vipr,
@@ -36,22 +42,38 @@ rule parse_vipr_meta:
         "python vipr_parse.py --input {input.meta} --output {output.out} --regions {input.regions}"
 
 
-#if rerun, find only the new ones to download - exclude swedish samples we already have
+#if new run, ensure to exclude any sequences we already have in 'swedish' or 'manual'
+rule remove_dupes:
+    input:
+        genbank_meta = rules.parse_vipr_meta.output,
+        swed_meta = files.swedish_meta,
+        man_meta = files.manual_meta,
+    output:
+        "temp/meta_to_download.tsv"
+    shell:
+        "python find_new.py --input-new {input.genbank_meta} --exclude {input.swed_meta} {input.man_meta} --output {output}"
+
+
+#if rerun, find only the new ones to download - exclude old, swedish, & manual samples we already have
 rule find_new:
     input:
         old_meta = ancient("genbank/current_vipr_download.tsv"),
         swed_meta = files.swedish_meta,
+        man_meta = files.manual_meta,
         new_meta = rules.parse_vipr_meta.output.out
     output:
-        out = "temp/meta_to_download.tsv"
+        out = "temp/new_meta_to_download.tsv"
     shell:
-        "python find_new.py --input-old {input.old_meta} --input-new {input.new_meta} --input-swedish {input.swed_meta} --output {output.out}"
+        """
+        python find_new.py --input-new {input.new_meta} \
+            --exclude {input.swed_meta} {input.old_meta} {input.man_meta} \
+            --output {output.out}
+        """
 
-
-#download only new sequences if rerun, or all if not
+#download only new and non-duplicate sequences
 rule download_seqs:
     input:
-        meta = "temp/meta_to_download.tsv" if RERUN else rules.parse_vipr_meta.output.out
+        meta = rules.find_new.output[0] if RERUN else rules.remove_dupes.output[0]
     output:
         sequences = "temp/downloaded_seqs.fasta", 
         meta = "temp/downloaded_meta.tsv"
@@ -126,6 +148,7 @@ rule blast_sort:
         """
 
 #concatenate meta and sequences to existing genbank, if a rerun:
+#concat meta
 rule add_meta:
     input:
         metadata = [ancient("genbank/genbank_vp1_meta.tsv"), "temp/add_meta_vp1.tsv"]
@@ -147,7 +170,7 @@ rule add_meta:
             md.append(tmp)
         all_meta = pd.concat(md)
         all_meta.to_csv(output.metadata, sep='\t', index=False)
-
+#concat sequences
 rule add_sequences:
     input:
         ancient("genbank/genbank_vp1_sequences.fasta"), "temp/add_sequences_vp1.fasta"
@@ -158,10 +181,10 @@ rule add_sequences:
         cat {input} > {output}
         '''
 
-#concatenate genbank meta and seqs with Swedish samples
+#concatenate genbank meta and seqs with Swedish & manual samples
 rule concat_meta:
     input:
-        metadata = [files.swedish_meta, "temp/genbank_vp1_meta.tsv"]
+        metadata = [files.swedish_meta, files.manual_meta, "temp/genbank_vp1_meta.tsv"]
     output:
         metadata = "temp/metadata.tsv"
     run:
@@ -181,9 +204,10 @@ rule concat_meta:
         all_meta = pd.concat(md)
         all_meta.to_csv(output.metadata, sep='\t', index=False)
 
+#concatenate genbank seqs with Swedish & manual
 rule concat_sequences:
     input:
-        files.swedish_seqs, "temp/genbank_vp1_sequences.fasta"
+        files.swedish_seqs, files.manual_seqs, "temp/genbank_vp1_sequences.fasta"
     output:
         "temp/sequences.fasta"
     shell:
@@ -271,7 +295,7 @@ rule refine:
     input:
         tree = rules.tree.output.tree,
         alignment = rules.align.output.alignment,
-        metadata = rules.concat_meta.output.metadata
+        metadata = rules.make_database.output.meta,
     output:
         tree = "results/tree_vp1.nwk",
         node_data = "results/branch_lengths_vp1.json"
@@ -332,7 +356,7 @@ rule clades:
 rule traits:
     input:
         tree = rules.refine.output.tree,
-        metadata = rules.concat_meta.output.metadata
+        metadata = rules.make_database.output.meta,
     output:
         node_data = "results/traits_vp1.json",
     params:
@@ -346,7 +370,7 @@ rule traits:
 rule export:
     input:
         tree = rules.refine.output.tree,
-        metadata = rules.concat_meta.output.metadata,
+        metadata = rules.make_database.output.meta,
         branch_lengths = rules.refine.output.node_data,
         nt_muts = rules.ancestral.output.nt_data,
         aa_muts = rules.translate.output.aa_data,
